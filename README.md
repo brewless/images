@@ -9,6 +9,9 @@ keep building and running your application without us.
 | `brewless-base:php8.4` | What an application runs on: FrankenPHP, the usual PHP extensions, a default server configuration and entrypoint |
 | `brewless-builder:php8.4` | The base plus Composer, Node 24 and `crane`; the build job in your project runs in it |
 
+Published from this repository as `ghcr.io/brewless/brewless-base:php8.4` and
+`ghcr.io/brewless/brewless-builder:php8.4`. To build them yourself:
+
 ```bash
 docker build --platform linux/amd64 --target base    -t <registry>/brewless-base:php8.4 .
 docker build --platform linux/amd64 --target builder -t <registry>/brewless-builder:php8.4 .
