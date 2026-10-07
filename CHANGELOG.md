@@ -1,5 +1,5 @@
 # Changelog
 
-## php8.4 (not released yet)
+## Not released yet
 
-- `brewless-base` and `brewless-builder` for PHP 8.4 on FrankenPHP 1.
+- `brewless-base` and `brewless-builder` for PHP 8.3, 8.4 and 8.5 on FrankenPHP 1.

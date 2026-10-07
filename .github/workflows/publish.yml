@@ -16,7 +16,9 @@ jobs:
   images:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
+        php: ['8.3', '8.4', '8.5']
         target: [base, builder]
     steps:
       - uses: actions/checkout@v4
@@ -31,8 +33,9 @@ jobs:
         with:
           context: .
           target: ${{ matrix.target }}
+          build-args: PHP_VERSION=${{ matrix.php }}
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ghcr.io/${{ github.repository_owner }}/brewless-${{ matrix.target }}:php8.4
-          cache-from: type=gha,scope=${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+          tags: ghcr.io/${{ github.repository_owner }}/brewless-${{ matrix.target }}:php${{ matrix.php }}
+          cache-from: type=gha,scope=${{ matrix.target }}-${{ matrix.php }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}-${{ matrix.php }}
