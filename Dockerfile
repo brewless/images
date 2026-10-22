@@ -16,6 +16,14 @@ FROM dunglas/frankenphp:1-php${PHP_VERSION} AS base
 RUN install-php-extensions pdo_pgsql pdo_mysql redis intl bcmath pcntl zip gd exif opcache \
     && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 
+# Two command-line tools an application may shell out to: pg_dump and pg_restore for its own logical
+# back-ups (Serverless SQL backs up one database per resource, not the databases an application
+# creates next to it), and pdftotext for the text layer of a PDF. Both from Debian, no recommends.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client poppler-utils \
+    && rm -rf /var/lib/apt/lists/* \
+    && pg_dump --version && pdftotext -v 2>&1 | head -1
+
 # Refuse a PHP without the PHP2Shell fix (CVE-2026-109618, CVE-2026-109619).
 RUN php -r '$min = ["8.3" => "8.3.36", "8.4" => "8.4.27"][PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION] ?? "8.5.12"; if (version_compare(PHP_VERSION, $min, "<")) { fwrite(STDERR, "PHP ".PHP_VERSION." is older than ".$min.PHP_EOL); exit(1); }'
 
