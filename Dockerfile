@@ -52,17 +52,32 @@ FROM base AS builder
 # Composer, Node (the Debian build: the base is Debian too), crane, which
 # pushes a layer on top of an image through the registry API, and rclone, which
 # copies the files of an existing S3 bucket into the application's own bucket.
+# For copying an existing database in (brewless db:import): the newest
+# PostgreSQL client from the PostgreSQL project's own Debian repository, so
+# pg_dump reads every server up to that version (Debian itself only carries one),
+# the MariaDB client, whose mariadb-dump also reads MySQL, and pgloader for MySQL
+# to PostgreSQL. pgloader is the build of its author: the one Debian and the
+# PostgreSQL repository carry cannot sign in to MySQL 8 (caching_sha2_password)
+# nor read its collations. It reads /etc/mysql/my.cnf and stops at an
+# !includedir line, so that file holds no more than the client needs.
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY --from=node:24-slim /usr/local/bin/node /usr/local/bin/node
 COPY --from=node:24-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=gcr.io/go-containerregistry/crane:latest /ko-app/crane /usr/local/bin/crane
 COPY --from=rclone/rclone:1.75.2 /usr/local/bin/rclone /usr/local/bin/rclone
+COPY --from=ghcr.io/dimitri/pgloader@sha256:a1d4a78e78a64e46cd3fc7dfc57d24eb91ffb1a5520f2b1f55631815e3658d6e /usr/local/bin/pgloader /usr/local/bin/pgloader
 
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
-    && apt-get update && apt-get install -y --no-install-recommends unzip git ca-certificates \
+    && apt-get update && apt-get install -y --no-install-recommends unzip git ca-certificates curl \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 mariadb-client \
     && rm -rf /var/lib/apt/lists/* \
-    && php -v && composer --version && node --version && npm --version && crane version && rclone version
+    && rm /etc/mysql/my.cnf && printf '[client]\n' > /etc/mysql/my.cnf \
+    && php -v && composer --version && node --version && npm --version && crane version && rclone version \
+    && pg_dump --version | grep -q " 18\." && psql --version && pgloader --version && mariadb-dump --version
 
 ENTRYPOINT []
 CMD ["sh"]
