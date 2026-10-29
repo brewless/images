@@ -7,7 +7,7 @@ keep building and running your application without us.
 | Image | What it is |
 | --- | --- |
 | `brewless-base:php<version>` | What an application runs on: FrankenPHP, the usual PHP extensions, `pg_dump` and `pdftotext`, a default server configuration and entrypoint |
-| `brewless-builder:php<version>` | The base plus Composer, Node 24 and `crane`; the build job in your project runs in it |
+| `brewless-builder:php<version>` | The base plus Composer, Node 24, `crane` and `rclone`; the build job in your project runs in it, and so does a file import from another S3 bucket |
 
 Published from this repository for PHP 8.3, 8.4 and 8.5, as
 `ghcr.io/brewless/brewless-base:php8.4` and `ghcr.io/brewless/brewless-builder:php8.4`

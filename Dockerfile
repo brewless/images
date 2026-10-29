@@ -49,18 +49,20 @@ CMD ["web"]
 
 FROM base AS builder
 
-# Composer, Node (the Debian build: the base is Debian too) and crane, which
-# pushes a layer on top of an image through the registry API.
+# Composer, Node (the Debian build: the base is Debian too), crane, which
+# pushes a layer on top of an image through the registry API, and rclone, which
+# copies the files of an existing S3 bucket into the application's own bucket.
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY --from=node:24-slim /usr/local/bin/node /usr/local/bin/node
 COPY --from=node:24-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=gcr.io/go-containerregistry/crane:latest /ko-app/crane /usr/local/bin/crane
+COPY --from=rclone/rclone:1.75.2 /usr/local/bin/rclone /usr/local/bin/rclone
 
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
     && apt-get update && apt-get install -y --no-install-recommends unzip git ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && php -v && composer --version && node --version && npm --version && crane version
+    && php -v && composer --version && node --version && npm --version && crane version && rclone version
 
 ENTRYPOINT []
 CMD ["sh"]
