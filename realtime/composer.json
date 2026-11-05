@@ -1,0 +1,40 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "brewless/realtime",
+    "type": "project",
+    "description": "A bare Laravel application that runs Laravel Reverb on its own, for the Brewless Realtime container.",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "ext-pcntl": "*",
+        "laravel/framework": "^13.40",
+        "laravel/reverb": "^1.12"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "@php artisan package:discover --ansi"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": []
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "platform": {
+            "php": "8.4.27",
+            "ext-pcntl": "8.4.27"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

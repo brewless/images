@@ -1,5 +1,9 @@
 # Changelog
 
+## Not released yet
+
+- `brewless-realtime` 1.0.0, a new image: a bare Laravel 13 application on PHP 8.4 (Alpine) that runs Laravel Reverb 1.12 on its own for one application, configured with `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET` and `REVERB_ALLOWED_ORIGINS`. A stop closes every connection with Pusher code 4200 so clients reconnect at once, and a connection from a refused origin is closed with 4009. Published as `brewless-realtime:1.0.0`, `:1.0` and `:1`; a published version is never replaced. The build refuses a package that is not under a permissive licence.
+
 ## 1.0.0 (4 November 2026)
 
 First tagged release. The images have been building and running Brewless's own
