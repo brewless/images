@@ -14,5 +14,16 @@
 	@build path /build/*
 	header @build Cache-Control "public, max-age=31536000, immutable"
 
+	# So can a static file asked for with its version in the query string
+	# (`/img/logo.svg?v=1a2b3c`): a new version is a new address. Only a file
+	# that exists under public/ and is not PHP, so a page with ?v= never is.
+	@versioned {
+		query v=*
+		file {path}
+		not path *.php
+		path_regexp \.(css|js|mjs|map|svg|png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|eot|webmanifest|json|txt|xml|pdf|mp3|mp4|webm)$
+	}
+	header @versioned Cache-Control "public, max-age=31536000, immutable"
+
 	php_server
 }

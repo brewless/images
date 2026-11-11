@@ -2,6 +2,7 @@
 
 ## Not released yet
 
+- `brewless-base` (and so `brewless-builder`): a static file under `public/` asked for with its version in the query string (`/img/logo.svg?v=1a2b3c`, as an application's asset helper writes it) gets `Cache-Control: public, max-age=31536000, immutable`, like `/build/*` already did. A page with `?v=` and a file that does not exist are left alone. Before this, such files had no `Cache-Control` at all on the container's own address and on the test address, and PageSpeed flagged them.
 - `brewless-realtime` 1.0.0, a new image: a bare Laravel 13 application on PHP 8.4 (Alpine) that runs Laravel Reverb 1.12 on its own for one application, configured with `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET` and `REVERB_ALLOWED_ORIGINS`. A stop closes every connection with Pusher code 4200 so clients reconnect at once, and a connection from a refused origin is closed with 4009. Published as `brewless-realtime:1.0.0`, `:1.0` and `:1`; a published version is never replaced. The build refuses a package that is not under a permissive licence.
 
 ## 1.0.0 (4 November 2026)
