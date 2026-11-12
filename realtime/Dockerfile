@@ -4,17 +4,24 @@
 # its own, for one customer application at a time. No database, no cache
 # server, no code of that application: only the keys it broadcasts with.
 #
-#   docker build --platform linux/amd64 -t <registry>/brewless-realtime:1.0.0 realtime
+#   docker build --platform linux/amd64 -t <registry>/brewless-realtime:1.1.0 realtime
 
 ARG PHP_VERSION=8.4
 
 FROM php:${PHP_VERSION}-cli-alpine AS php
 
 # pcntl, so that PHP handles SIGTERM itself and can close every connection first.
-RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
+# uv, the event loop Reverb holds its connections with: without it PHP falls back to
+# stream_select, which stops at 1,024 open files, so at about a thousand connections.
+# By version: PECL lists every release of uv as beta, so its name alone installs nothing.
+RUN apk add --no-cache libuv \
+    && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS libuv-dev \
     && docker-php-ext-install -j"$(nproc)" pcntl \
+    && pecl install uv-0.3.1 \
+    && docker-php-ext-enable uv \
     && apk del .build-deps \
-    && php -m | grep -qx pcntl
+    && rm -rf /tmp/pear \
+    && php -m | grep -qx pcntl && php -m | grep -qx uv
 
 # Refuse a PHP without the PHP2Shell fix (CVE-2026-109618, CVE-2026-109619).
 RUN php -r '$min = ["8.3" => "8.3.36", "8.4" => "8.4.27"][PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION] ?? "8.5.12"; if (version_compare(PHP_VERSION, $min, "<")) { fwrite(STDERR, "PHP ".PHP_VERSION." is older than ".$min.PHP_EOL); exit(1); }'

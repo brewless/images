@@ -13,8 +13,11 @@ ARG PHP_VERSION=8.4
 
 FROM dunglas/frankenphp:1-php${PHP_VERSION} AS base
 
-RUN install-php-extensions pdo_pgsql pdo_mysql redis intl bcmath pcntl zip gd exif opcache \
-    && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+# uv: the event loop a realtime server (Laravel Reverb) holds its connections with. Without it PHP falls
+# back to stream_select, which stops at 1,024 open files: about a thousand connections.
+RUN install-php-extensions pdo_pgsql pdo_mysql redis intl bcmath pcntl zip gd exif opcache uv \
+    && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+    && php -m | grep -qx uv
 
 # Two command-line tools an application may shell out to: pg_dump and pg_restore for its own logical
 # back-ups (Serverless SQL backs up one database per resource, not the databases an application

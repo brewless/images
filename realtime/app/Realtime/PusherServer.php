@@ -6,11 +6,12 @@ namespace App\Realtime;
 
 use Laravel\Reverb\Contracts\Connection;
 use Laravel\Reverb\Contracts\WebSocketConnection;
+use Laravel\Reverb\Protocols\Pusher\Exceptions\ConnectionLimitExceeded;
 use Laravel\Reverb\Protocols\Pusher\Exceptions\InvalidOrigin;
 use Laravel\Reverb\Protocols\Pusher\Server;
 
 /**
- * Reverb's Pusher server, with two changes.
+ * Reverb's Pusher server, with three changes.
  *
  * It keeps a list of the open connections. Reverb itself only knows the
  * connections that joined a channel, and on a stop it drops them without a
@@ -21,12 +22,21 @@ use Laravel\Reverb\Protocols\Pusher\Server;
  * It closes a connection from an Origin that is not allowed. Reverb sends the
  * error but leaves the socket open, and a client that ignores the error can
  * still subscribe to public channels.
+ *
+ * It counts every open connection against the ceiling (REVERB_APP_MAX_CONNECTIONS)
+ * and closes the one that is too many with Pusher code 4004. Reverb counts
+ * only the connections that joined a channel, so a browser that connects and
+ * subscribes to nothing would never be one too many, and it leaves the socket
+ * of a refused one open, where it still takes memory and keeps a serverless
+ * container awake.
  */
 final class PusherServer extends Server
 {
     public const int RECONNECT_IMMEDIATELY = 4200;
 
     public const int ORIGIN_NOT_ALLOWED = 4009;
+
+    public const int OVER_CAPACITY = 4004;
 
     /** @var array<string, Connection> */
     private array $connections = [];
@@ -46,6 +56,13 @@ final class PusherServer extends Server
         } catch (InvalidOrigin $exception) {
             $connection->send((string) json_encode($exception->payload()));
             $this->socket($connection)->close(pack('n', self::ORIGIN_NOT_ALLOWED).'Origin not allowed');
+
+            return;
+        }
+
+        if ($connection->app()->hasMaxConnectionLimit() && count($this->connections) >= $connection->app()->maxConnections()) {
+            $connection->send((string) json_encode((new ConnectionLimitExceeded)->payload()));
+            $this->socket($connection)->close(pack('n', self::OVER_CAPACITY).'Over connection quota');
 
             return;
         }
