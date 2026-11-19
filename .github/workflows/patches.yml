@@ -1,0 +1,88 @@
+name: PHP patches
+
+# Every three hours between 07:00 and 23:00 Amsterdam time, plus 17:00 and 18:00: is a newer
+# PHP release out than the one in our published images? Then raise the minimum in the
+# Dockerfile, commit it and publish, after which publish.yml tells Brewless, which rolls the
+# patched runtime out to every application (BL-303). A superadmin can also start this by hand
+# from the Brewless admin panel (workflow_dispatch).
+#
+# GitHub reads cron in UTC and Amsterdam moves between UTC+1 and UTC+2, so the schedule holds
+# the hours of both, and the first step lets a run through only at an Amsterdam hour of the list.
+on:
+  schedule:
+    - cron: '0 5,6,8,9,11,12,14,15,16,17,18,20,21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: php-patches
+  cancel-in-progress: false
+
+env:
+  # Europe/Amsterdam.
+  HOURS: '07 10 13 16 17 18 19 22'
+
+jobs:
+  patches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Amsterdam hour
+        id: hour
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          hour="$(TZ=Europe/Amsterdam date +%H)"
+          run=true
+          if [ "$EVENT" = schedule ] && ! echo " $HOURS " | grep -q " $hour "; then
+            run=false
+            echo "::notice::$hour:00 in Amsterdam is not one of the hours of the list; nothing to do."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        if: steps.hour.outputs.run == 'true'
+
+      - name: Compare upstream with ours
+        id: compare
+        if: steps.hour.outputs.run == 'true'
+        run: |
+          bash scripts/php-releases.sh | tee releases.txt
+          newer=false
+          raise=false
+          while read -r version upstream ours guard; do
+            upstream="${upstream#upstream=}"; ours="${ours#ours=}"; guard="${guard#guard=}"
+            [ -n "$upstream" ] || { echo "::warning::No FrankenPHP release found for PHP $version"; continue; }
+            if [ -z "$ours" ] || [ "$(printf '%s\n%s\n' "$ours" "$upstream" | sort -V | tail -n 1)" != "$ours" ]; then
+              newer=true
+              echo "::notice::PHP $upstream is out; our images carry ${ours:-nothing}."
+            fi
+            if [ "$(printf '%s\n%s\n' "$guard" "$upstream" | sort -V | tail -n 1)" != "$guard" ]; then
+              raise=true
+              if [ "$version" = 8.5 ]; then
+                sed -i -E "s/\?\? \"$guard\"/?? \"$upstream\"/" Dockerfile
+              else
+                sed -i -E "s/\"$version\" => \"$guard\"/\"$version\" => \"$upstream\"/" Dockerfile
+              fi
+            fi
+          done < releases.txt
+          echo "newer=$newer" >> "$GITHUB_OUTPUT"
+          echo "raise=$raise" >> "$GITHUB_OUTPUT"
+
+      - name: Raise the minimum PHP release
+        if: steps.compare.outputs.raise == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Dockerfile
+          git commit -m "fix: build on the newest PHP releases ($(grep -o '\$min = \[[^]]*\][^?]*?? "[0-9.]*"' Dockerfile | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | paste -sd ' '))"
+          git push origin HEAD:main
+
+      # A push with this workflow's token starts no other workflow, so publish is started by name.
+      - name: Publish
+        if: steps.compare.outputs.newer == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run publish.yml --ref main

@@ -20,6 +20,17 @@ docker build --platform linux/amd64 --build-arg PHP_VERSION=8.4 --target base   
 docker build --platform linux/amd64 --build-arg PHP_VERSION=8.4 --target builder -t <registry>/brewless-builder:php8.4 .
 ```
 
+## Patched PHP, by itself
+
+`.github/workflows/patches.yml` looks at 07, 10, 13, 16, 17, 18, 19 and 22 o'clock
+Amsterdam time whether FrankenPHP published a newer PHP release than the one in
+`brewless-base` (`scripts/php-releases.sh` prints both, per PHP version). When it
+did, the workflow raises the minimum in the Dockerfile, commits it and starts
+`publish.yml`. Once published, `publish.yml` tells Brewless through a signed
+webhook, and Brewless puts the new base image under every application that runs
+on it. The repository needs `BREWLESS_IMAGES_WEBHOOK_URL` (a variable) and
+`BREWLESS_IMAGES_WEBHOOK_SECRET` (a secret); without them nothing is called.
+
 ## How a build uses them
 
 A serverless job runs without privileges, so it cannot execute a Dockerfile.
