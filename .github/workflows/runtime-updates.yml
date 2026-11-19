@@ -1,6 +1,6 @@
 name: Runtime security updates
 
-# At 07, 10, 13, 16, 17, 18, 19 and 22 o'clock Amsterdam time (BL-303):
+# Every hour, around the clock (BL-303). It runs here, outside Brewless, so it wakes no container:
 #   1. is a newer PHP release out than the one in our published images?
 #   2. what does Trivy find in the published images (CRITICAL and HIGH)?
 # A newer PHP release, or a finding with a fix that was not rebuilt for before, raises the minimum in
@@ -9,11 +9,12 @@ name: Runtime security updates
 # application. A finding without a fix only goes to Brewless, for the admin panel. A superadmin can
 # start this by hand from the Brewless admin panel (workflow_dispatch).
 #
-# GitHub reads cron in UTC and Amsterdam moves between UTC+1 and UTC+2, so the schedule holds the
-# hours of both, and the first step lets a run through only at an Amsterdam hour of the list.
+# This repository is public, and so are its Actions logs: the webhook address and its secret are
+# both repository secrets, which GitHub masks, and nothing here prints them.
 on:
   schedule:
-    - cron: '0 5,6,8,9,11,12,14,15,16,17,18,20,21 * * *'
+    # At :17, away from the top of the hour when GitHub's scheduler is busiest.
+    - cron: '17 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -24,33 +25,14 @@ concurrency:
   group: runtime-updates
   cancel-in-progress: false
 
-env:
-  # Europe/Amsterdam.
-  HOURS: '07 10 13 16 17 18 19 22'
-
 jobs:
   updates:
     runs-on: ubuntu-latest
     steps:
-      - name: Amsterdam hour
-        id: hour
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          hour="$(TZ=Europe/Amsterdam date +%H)"
-          run=true
-          if [ "$EVENT" = schedule ] && ! echo " $HOURS " | grep -q " $hour "; then
-            run=false
-            echo "::notice::$hour:00 in Amsterdam is not one of the hours of the list; nothing to do."
-          fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v7
-        if: steps.hour.outputs.run == 'true'
 
       - name: Compare PHP releases
         id: php
-        if: steps.hour.outputs.run == 'true'
         run: |
           bash scripts/php-releases.sh | tee releases.txt
           newer='{}'
@@ -73,12 +55,11 @@ jobs:
 
       - name: Scan the published images
         id: scan
-        if: steps.hour.outputs.run == 'true'
         run: |
           bash scripts/scan-images.sh > scans.json
           jq -r '.[] | "\(.image): \([.findings[] | select(.fixed != null)] | length) with a fix, \([.findings[] | select(.fixed == null)] | length) without"' scans.json
           # The fixable findings no rebuild was made for yet: security/rebuilt.json holds the ones the last rebuild was for,
-          # so a finding the rebuild could not fix (one that waits for FrankenPHP itself) does not rebuild every three hours.
+          # so a finding the rebuild could not fix (one that waits for FrankenPHP itself) does not rebuild every hour.
           mkdir -p security
           [ -f security/rebuilt.json ] || echo '[]' > security/rebuilt.json
           jq -c '[.[] as $s | $s.findings[] | select(.fixed != null) | {id, severity, image: $s.image, package, fixed, type}]' scans.json > fixable.json
@@ -122,16 +103,16 @@ jobs:
           gh workflow run publish.yml --ref main -f reason="$reason"
 
       - name: Report the scan to Brewless
-        if: steps.hour.outputs.run == 'true'
         env:
-          URL: ${{ vars.BREWLESS_IMAGES_WEBHOOK_URL }}
+          URL: ${{ secrets.BREWLESS_IMAGES_WEBHOOK_URL }}
           SECRET: ${{ secrets.BREWLESS_IMAGES_WEBHOOK_SECRET }}
         run: |
           if [ -z "$URL" ] || [ -z "$SECRET" ]; then
-            echo "::warning::BREWLESS_IMAGES_WEBHOOK_URL or BREWLESS_IMAGES_WEBHOOK_SECRET is not set; Brewless is not told."
+            echo "::warning::The secret BREWLESS_IMAGES_WEBHOOK_URL or BREWLESS_IMAGES_WEBHOOK_SECRET is not set; Brewless is not told."
             exit 0
           fi
           body=$(jq -c '{event: "scanned", scans: [.[] | {image, findings: [.findings[] | {id, severity, package, installed, fixed}]}]}' scans.json)
           moment="$(date +%s)"
           signature="sha256=$(printf '%s' "$moment.$body" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)"
-          curl -fsS -X POST "$URL" -H 'Content-Type: application/json' -H "X-Brewless-Timestamp: $moment" -H "X-Brewless-Signature: $signature" --data "$body"
+          curl -fsS -o /dev/null -X POST "$URL" -H 'Content-Type: application/json' -H "X-Brewless-Timestamp: $moment" -H "X-Brewless-Signature: $signature" --data "$body" 2>/dev/null \
+            || { echo "::error::Brewless did not take the report (the address and the error are left out of this public log)."; exit 1; }
