@@ -2,6 +2,8 @@
 
 ## Not released yet
 
+- PHP 8.3.37, 8.4.28 and 8.5.13, the security release of 19 November 2026 (CVE-2026-115560 among its fixes); the build of `brewless-base`, `brewless-builder` and `brewless-realtime` refuses an older PHP. `brewless-realtime` 1.1.1 carries it.
+
 - `brewless-base` (and so `brewless-builder`) carries the `uv` extension. A realtime server on an application's own image (Laravel Reverb) holds its connections with libuv instead of `stream_select`, which stops at 1,024 open files. Measured on a Scaleway Serverless Container: without `uv` the server stopped at connection 1,018 and every browser was cut.
 - `brewless-realtime` 1.1.0 carries the `uv` extension (0.3.1) for the same reason. With it a 256 MB container at Scaleway held about 1,300 connections that only listened. `REVERB_APP_MAX_CONNECTIONS` now counts every open connection, not only the ones that joined a channel, and the connection that is one too many is closed with Pusher code 4004 instead of being left open after the error. Brewless sets that ceiling from the container's memory.
 - `brewless-base` (and so `brewless-builder`): a static file under `public/` asked for with its version in the query string (`/img/logo.svg?v=1a2b3c`, as an application's asset helper writes it) gets `Cache-Control: public, max-age=31536000, immutable`, like `/build/*` already did. A page with `?v=` and a file that does not exist are left alone. Before this, such files had no `Cache-Control` at all on the container's own address and on the test address, and PageSpeed flagged them.

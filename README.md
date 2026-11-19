@@ -81,7 +81,7 @@ libuv. Without it PHP uses `stream_select`, which stops at 1,024 open files:
 the server of 1.0.0 stopped at connection 1,018.
 
 Each version is published once and never replaced: pin the full version
-(`brewless-realtime:1.1.0`) to get exactly that image, or follow `:1.0` or `:1`.
+(`brewless-realtime:1.1.1`) to get exactly that image, or follow `:1.1` or `:1`.
 Brewless pins a full version and moves to a new one with a deploy. The version
 is in [realtime/VERSION](realtime/VERSION).
 
@@ -101,7 +101,7 @@ three `REVERB_APP_*` values, `REVERB_HOST=localhost`, `REVERB_PORT=8080` and
 `REVERB_SCHEME=http`. To build it yourself:
 
 ```bash
-docker build --platform linux/amd64 --build-arg VERSION=1.1.0 -t <registry>/brewless-realtime:1.1.0 realtime
+docker build --platform linux/amd64 --build-arg VERSION=1.1.1 -t <registry>/brewless-realtime:1.1.1 realtime
 ```
 
 The build stops when a package in `composer.lock` is not under a permissive
