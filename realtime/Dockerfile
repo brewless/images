@@ -23,6 +23,10 @@ RUN apk add --no-cache libuv \
     && rm -rf /tmp/pear \
     && php -m | grep -qx pcntl && php -m | grep -qx uv
 
+# Security fixes of the Alpine packages that are out since the PHP image was made: a rebuild picks
+# them up, which is what the scheduled scan relies on (runtime-updates.yml, BL-303).
+RUN apk upgrade --no-cache
+
 # Refuse a PHP without the PHP2Shell fix (CVE-2026-109618, CVE-2026-109619).
 RUN php -r '$min = ["8.3" => "8.3.36", "8.4" => "8.4.27"][PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION] ?? "8.5.12"; if (version_compare(PHP_VERSION, $min, "<")) { fwrite(STDERR, "PHP ".PHP_VERSION." is older than ".$min.PHP_EOL); exit(1); }'
 

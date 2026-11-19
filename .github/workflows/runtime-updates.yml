@@ -1,0 +1,137 @@
+name: Runtime security updates
+
+# At 07, 10, 13, 16, 17, 18, 19 and 22 o'clock Amsterdam time (BL-303):
+#   1. is a newer PHP release out than the one in our published images?
+#   2. what does Trivy find in the published images (CRITICAL and HIGH)?
+# A newer PHP release, or a finding with a fix that was not rebuilt for before, raises the minimum in
+# the Dockerfile, updates the realtime image's Composer packages and version where needed, commits
+# that and publishes. publish.yml then tells Brewless, which rolls the new images out to every
+# application. A finding without a fix only goes to Brewless, for the admin panel. A superadmin can
+# start this by hand from the Brewless admin panel (workflow_dispatch).
+#
+# GitHub reads cron in UTC and Amsterdam moves between UTC+1 and UTC+2, so the schedule holds the
+# hours of both, and the first step lets a run through only at an Amsterdam hour of the list.
+on:
+  schedule:
+    - cron: '0 5,6,8,9,11,12,14,15,16,17,18,20,21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: runtime-updates
+  cancel-in-progress: false
+
+env:
+  # Europe/Amsterdam.
+  HOURS: '07 10 13 16 17 18 19 22'
+
+jobs:
+  updates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Amsterdam hour
+        id: hour
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          hour="$(TZ=Europe/Amsterdam date +%H)"
+          run=true
+          if [ "$EVENT" = schedule ] && ! echo " $HOURS " | grep -q " $hour "; then
+            run=false
+            echo "::notice::$hour:00 in Amsterdam is not one of the hours of the list; nothing to do."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        if: steps.hour.outputs.run == 'true'
+
+      - name: Compare PHP releases
+        id: php
+        if: steps.hour.outputs.run == 'true'
+        run: |
+          bash scripts/php-releases.sh | tee releases.txt
+          newer='{}'
+          while read -r version upstream ours guard; do
+            upstream="${upstream#upstream=}"; ours="${ours#ours=}"; guard="${guard#guard=}"
+            [ -n "$upstream" ] || { echo "::warning::No FrankenPHP release found for PHP $version"; continue; }
+            if [ -z "$ours" ] || [ "$(printf '%s\n%s\n' "$ours" "$upstream" | sort -V | tail -n 1)" != "$ours" ]; then
+              newer=$(echo "$newer" | jq -c --arg v "$version" --arg r "$upstream" '. + {($v): $r}')
+              echo "::notice::PHP $upstream is out; our images carry ${ours:-nothing}."
+            fi
+            if [ "$(printf '%s\n%s\n' "$guard" "$upstream" | sort -V | tail -n 1)" != "$guard" ]; then
+              if [ "$version" = 8.5 ]; then
+                sed -i -E "s/\?\? \"$guard\"/?? \"$upstream\"/" Dockerfile realtime/Dockerfile
+              else
+                sed -i -E "s/\"$version\" => \"$guard\"/\"$version\" => \"$upstream\"/" Dockerfile realtime/Dockerfile
+              fi
+            fi
+          done < releases.txt
+          echo "newer=$newer" >> "$GITHUB_OUTPUT"
+
+      - name: Scan the published images
+        id: scan
+        if: steps.hour.outputs.run == 'true'
+        run: |
+          bash scripts/scan-images.sh > scans.json
+          jq -r '.[] | "\(.image): \([.findings[] | select(.fixed != null)] | length) with a fix, \([.findings[] | select(.fixed == null)] | length) without"' scans.json
+          # The fixable findings no rebuild was made for yet: security/rebuilt.json holds the ones the last rebuild was for,
+          # so a finding the rebuild could not fix (one that waits for FrankenPHP itself) does not rebuild every three hours.
+          mkdir -p security
+          [ -f security/rebuilt.json ] || echo '[]' > security/rebuilt.json
+          jq -c '[.[] as $s | $s.findings[] | select(.fixed != null) | {id, severity, image: $s.image, package, fixed, type}]' scans.json > fixable.json
+          jq -c --slurpfile done security/rebuilt.json '[.[] | select((.image + "|" + .id) as $k | ($done[0] | index($k)) | not)]' fixable.json > new.json
+          echo "new=$(jq length new.json)" >> "$GITHUB_OUTPUT"
+          echo "realtime=$(jq '[.[] | select(.image | startswith("brewless-realtime:"))] | length' new.json)" >> "$GITHUB_OUTPUT"
+          echo "composer=$(jq -r '[.[] | select(.image | startswith("brewless-realtime:")) | select(.type == "composer") | .package] | unique | join(" ")' new.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Update the realtime image's Composer packages
+        if: steps.scan.outputs.composer != ''
+        env:
+          PACKAGES: ${{ steps.scan.outputs.composer }}
+        run: |
+          # shellcheck disable=SC2086
+          docker run --rm -v "$PWD/realtime:/app" -w /app composer:2 update $PACKAGES --with-all-dependencies --no-dev --no-interaction --no-progress --no-scripts --ignore-platform-req=ext-uv --ignore-platform-req=ext-pcntl
+
+      - name: Raise the realtime version
+        if: steps.scan.outputs.realtime != '0' || steps.php.outputs.newer != '{}'
+        run: |
+          version="$(tr -d '[:space:]' < realtime/VERSION)"
+          next="$(echo "$version" | awk -F. '{print $1"."$2"."$3+1}')"
+          echo "$next" > realtime/VERSION
+          sed -i "s/brewless-realtime:$version/brewless-realtime:$next/g" realtime/Dockerfile README.md
+
+      - name: Commit and publish
+        if: steps.php.outputs.newer != '{}' || steps.scan.outputs.new != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PHP: ${{ steps.php.outputs.newer }}
+        run: |
+          jq -c '[.[] | .image + "|" + .id]' fixable.json > security/rebuilt.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Dockerfile realtime security
+          message="fix: security update of the runtime images"
+          [ "$PHP" = '{}' ] || message="$message (PHP $(echo "$PHP" | jq -r '[.[]] | join(", ")'))"
+          git commit -m "$message" -m "$(jq -r '.[] | "- \(.id) in \(.package) (\(.image)), fixed in \(.fixed)"' new.json)" || true
+          git push origin HEAD:main
+          reason=$(jq -cn --argjson php "$PHP" --slurpfile new new.json '{php: $php, vulnerabilities: [$new[0][] | {id, severity, image, package, fixed}]}')
+          # A push with this workflow's token starts no other workflow, so publish is started by name.
+          gh workflow run publish.yml --ref main -f reason="$reason"
+
+      - name: Report the scan to Brewless
+        if: steps.hour.outputs.run == 'true'
+        env:
+          URL: ${{ vars.BREWLESS_IMAGES_WEBHOOK_URL }}
+          SECRET: ${{ secrets.BREWLESS_IMAGES_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
+            echo "::warning::BREWLESS_IMAGES_WEBHOOK_URL or BREWLESS_IMAGES_WEBHOOK_SECRET is not set; Brewless is not told."
+            exit 0
+          fi
+          body=$(jq -c '{event: "scanned", scans: [.[] | {image, findings: [.findings[] | {id, severity, package, installed, fixed}]}]}' scans.json)
+          moment="$(date +%s)"
+          signature="sha256=$(printf '%s' "$moment.$body" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)"
+          curl -fsS -X POST "$URL" -H 'Content-Type: application/json' -H "X-Brewless-Timestamp: $moment" -H "X-Brewless-Signature: $signature" --data "$body"

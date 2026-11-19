@@ -20,15 +20,23 @@ docker build --platform linux/amd64 --build-arg PHP_VERSION=8.4 --target base   
 docker build --platform linux/amd64 --build-arg PHP_VERSION=8.4 --target builder -t <registry>/brewless-builder:php8.4 .
 ```
 
-## Patched PHP, by itself
+## Security updates, by themselves
 
-`.github/workflows/patches.yml` looks at 07, 10, 13, 16, 17, 18, 19 and 22 o'clock
-Amsterdam time whether FrankenPHP published a newer PHP release than the one in
-`brewless-base` (`scripts/php-releases.sh` prints both, per PHP version). When it
-did, the workflow raises the minimum in the Dockerfile, commits it and starts
-`publish.yml`. Once published, `publish.yml` tells Brewless through a signed
-webhook, and Brewless puts the new base image under every application that runs
-on it. The repository needs `BREWLESS_IMAGES_WEBHOOK_URL` (a variable) and
+`.github/workflows/runtime-updates.yml` runs at 07, 10, 13, 16, 17, 18, 19 and
+22 o'clock Amsterdam time. It compares the newest FrankenPHP release per PHP
+version with the one in `brewless-base` (`scripts/php-releases.sh`) and scans
+every published image with Trivy for CRITICAL and HIGH vulnerabilities
+(`scripts/scan-images.sh`). A newer PHP release, or a finding with a fix that
+no rebuild was made for yet (`security/rebuilt.json`), raises the minimum in the
+Dockerfile, updates the Composer packages of `brewless-realtime` and its version
+where needed, commits that and starts `publish.yml`. The images upgrade their
+Debian and Alpine packages when they are built, so a rebuild takes those fixes.
+
+Once published, `publish.yml` tells Brewless through a signed webhook, with the
+realtime version and the vulnerabilities it fixed, and Brewless puts the new
+images under every application that runs on them. Every run also reports its
+scan, so a finding without a fix shows in Brewless's admin panel. The
+repository needs `BREWLESS_IMAGES_WEBHOOK_URL` (a variable) and
 `BREWLESS_IMAGES_WEBHOOK_SECRET` (a secret); without them nothing is called.
 
 ## How a build uses them

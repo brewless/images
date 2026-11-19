@@ -7,6 +7,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      reason:
+        description: 'What the runtime-updates workflow published for, as JSON: {"php": {...}, "vulnerabilities": [...]}'
+        required: false
+        default: '{}'
 
 permissions:
   contents: read
@@ -40,25 +45,28 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.target }}-${{ matrix.php }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}-${{ matrix.php }}
 
-  # Tell Brewless the images are published (BL-303). Brewless reads them from ghcr.io itself and
-  # rolls a new base image out to every application; it only acts when a digest changed, so every
-  # publish may call. The request is signed over its moment and body with the shared secret.
+  # Tell Brewless the images are published (BL-303), with the realtime version and what the runtime-updates
+  # workflow published for. Brewless reads the images from ghcr.io itself and rolls new ones out to every
+  # application; it only acts when a digest changed, so every publish may call. The request is signed over
+  # its moment and body with the shared secret.
   notify:
-    needs: images
+    needs: [images, realtime]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
       - name: Call Brewless
         env:
           URL: ${{ vars.BREWLESS_IMAGES_WEBHOOK_URL }}
           SECRET: ${{ secrets.BREWLESS_IMAGES_WEBHOOK_SECRET }}
-          SHA: ${{ github.sha }}
+          REASON: ${{ github.event.inputs.reason || '{}' }}
         run: |
           if [ -z "$URL" ] || [ -z "$SECRET" ]; then
             echo "::warning::BREWLESS_IMAGES_WEBHOOK_URL or BREWLESS_IMAGES_WEBHOOK_SECRET is not set; Brewless is not told."
             exit 0
           fi
-          body="{\"commit\":\"$SHA\"}"
+          version="$(tr -d '[:space:]' < realtime/VERSION)"
+          body=$(echo "$REASON" | jq -c --arg realtime "$version" '{event: "published", realtime: (if $realtime == "" then null else $realtime end), vulnerabilities: (.vulnerabilities // [])}')
           moment="$(date +%s)"
           signature="sha256=$(printf '%s' "$moment.$body" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)"
           curl -fsS -X POST "$URL" -H 'Content-Type: application/json' -H "X-Brewless-Timestamp: $moment" -H "X-Brewless-Signature: $signature" --data "$body"

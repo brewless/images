@@ -27,6 +27,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && pg_dump --version && pdftotext -v 2>&1 | head -1
 
+# Security fixes of the Debian packages that are out since the FrankenPHP image was made: a rebuild
+# picks them up, which is what the scheduled scan relies on (runtime-updates.yml, BL-303).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # Refuse a PHP without the PHP2Shell fix (CVE-2026-109618, CVE-2026-109619).
 RUN php -r '$min = ["8.3" => "8.3.36", "8.4" => "8.4.27"][PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION] ?? "8.5.12"; if (version_compare(PHP_VERSION, $min, "<")) { fwrite(STDERR, "PHP ".PHP_VERSION." is older than ".$min.PHP_EOL); exit(1); }'
 
