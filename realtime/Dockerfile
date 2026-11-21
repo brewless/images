@@ -29,16 +29,20 @@ RUN php -r '$min = ["8.3" => "8.3.37", "8.4" => "8.4.28", "8.5" => "8.5.13"][PHP
 
 FROM php AS vendor
 
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2@sha256:50ea4d33fdcde1adb0f045547295faa1548b33872e5f789dae5b02ce2fb5de93 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 COPY . .
 
 # The packages from composer.lock, without development packages; the build
-# stops when one of them is not under a permissive licence.
-RUN composer install --no-dev --no-interaction --no-progress --classmap-authoritative \
-    && composer licenses --no-dev --format=json | php check-licenses.php \
-    && test -f vendor/laravel/framework/LICENSE.md && test -f vendor/laravel/reverb/LICENSE.md
+# stops when one of them is not under a permissive licence. They are installed
+# without running anything of theirs (no scripts, no plugins), so no code of a
+# package runs before its licence was looked at; what Laravel does after an
+# install, finding its packages, is run by name afterwards.
+RUN composer install --no-dev --no-interaction --no-progress --classmap-authoritative --no-scripts --no-plugins \
+    && composer licenses --no-dev --no-plugins --format=json | php check-licenses.php \
+    && test -f vendor/laravel/framework/LICENSE.md && test -f vendor/laravel/reverb/LICENSE.md \
+    && php artisan package:discover --ansi
 
 FROM php
 

@@ -85,11 +85,16 @@ FROM base AS builder
 # PostgreSQL repository carry cannot sign in to MySQL 8 (caching_sha2_password)
 # nor read its collations. It reads /etc/mysql/my.cnf and stops at an
 # !includedir line, so that file holds no more than the client needs.
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-COPY --from=node:24-slim /usr/local/bin/node /usr/local/bin/node
-COPY --from=node:24-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=gcr.io/go-containerregistry/crane:latest /ko-app/crane /usr/local/bin/crane
-COPY --from=rclone/rclone:1.75.2 /usr/local/bin/rclone /usr/local/bin/rclone
+# The tools are copied from images taken by digest, as pgloader already was: a tag can be moved to
+# other content, and these run in a build that holds a key of the customer's registry. Dependabot
+# proposes a new digest when one of them is released (.github/dependabot.yml). The FrankenPHP image
+# the base starts from is the exception, on purpose: it follows its tag, so a rebuild picks up a
+# patched PHP the day it is published, and the build refuses a PHP that is too old.
+COPY --from=composer:2@sha256:50ea4d33fdcde1adb0f045547295faa1548b33872e5f789dae5b02ce2fb5de93 /usr/bin/composer /usr/bin/composer
+COPY --from=node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=gcr.io/go-containerregistry/crane:v0.22.1@sha256:1f968817b95790bed063f71175aa6b8ff879fa17064020415f3e18bb6e6a36e1 /ko-app/crane /usr/local/bin/crane
+COPY --from=rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5 /usr/local/bin/rclone /usr/local/bin/rclone
 COPY --from=ghcr.io/dimitri/pgloader@sha256:a1d4a78e78a64e46cd3fc7dfc57d24eb91ffb1a5520f2b1f55631815e3658d6e /usr/local/bin/pgloader /usr/local/bin/pgloader
 
 # The key the PostgreSQL repository signs its packages with (fingerprint

@@ -1,0 +1,19 @@
+# The actions and the tool images are taken by commit and by digest, so they do not move by
+# themselves. Dependabot proposes the new one, as a pull request that builds every image first.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directories: ['/', '/realtime']
+    schedule:
+      interval: weekly
+    groups:
+      tool-images:
+        patterns: ['*']
