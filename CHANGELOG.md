@@ -2,7 +2,7 @@
 
 ## Not released yet
 
-- PHP 8.6 (8.6.0): `brewless-base` and `brewless-builder` are now built for `php8.6` too, and the build refuses an older 8.6. The default stays PHP 8.4. `brewless-realtime` 1.2.0 carries the guard for 8.6.
+- PHP 8.6: `brewless-base` and `brewless-builder` are published for `php8.6` too, on FrankenPHP's `1-php8.6` image (PHP 8.6.0 of 19 November 2026), with the same extensions as the other versions. Two things differ underneath. The released `redis` extension (6.3.0) does not compile on PHP 8.6, so the 8.6 image builds it from the commit of phpredis's development branch that phpredis tests on 8.6 (`PHPREDIS_FOR_PHP_86` in the Dockerfile), until a release does. And PHP's own 8.6 image no longer has `mbstring` compiled in, so the build adds it. The build refuses an 8.6 older than 8.6.0 and an image without `redis` or `mbstring`. Without `PHP_VERSION` the Dockerfile still builds for 8.4. `brewless-realtime` 1.2.0 carries the same refusal for 8.6 and still runs on PHP 8.4.
 - PHP 8.3.37, 8.4.28 and 8.5.13, the security release of 19 November 2026 (CVE-2026-115560 among its fixes); the build of `brewless-base`, `brewless-builder` and `brewless-realtime` refuses an older PHP. `brewless-realtime` 1.1.1 carries it.
 
 - `brewless-base` (and so `brewless-builder`) carries the `uv` extension. A realtime server on an application's own image (Laravel Reverb) holds its connections with libuv instead of `stream_select`, which stops at 1,024 open files. Measured on a Scaleway Serverless Container: without `uv` the server stopped at connection 1,018 and every browser was cut.

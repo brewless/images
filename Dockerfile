@@ -15,9 +15,24 @@ FROM dunglas/frankenphp:1-php${PHP_VERSION} AS base
 
 # uv: the event loop a realtime server (Laravel Reverb) holds its connections with. Without it PHP falls
 # back to stream_select, which stops at 1,024 open files: about a thousand connections.
-RUN install-php-extensions pdo_pgsql pdo_mysql redis intl bcmath pcntl zip gd exif opcache uv \
+#
+# redis: the released extension (6.3.0) does not compile on PHP 8.6. Until phpredis releases one that
+# does, the 8.6 image builds it from the commit of phpredis's development branch that phpredis itself
+# tests on PHP 8.6, with the options the release is built with; the older versions keep the release.
+#
+# mbstring: PHP's own 8.6 image, which FrankenPHP's is built on, no longer has it compiled in, and
+# Laravel does not start without it. On the older versions it is there already and nothing is done.
+ARG PHPREDIS_FOR_PHP_86=a6ce1e60b3e81ce3b25174aa5aaefd5590dc64fd
+RUN if [ "$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')" = "8.6" ]; then \
+        install-php-extensions pdo_pgsql pdo_mysql mbstring intl bcmath pcntl zip gd exif opcache uv \
+        && curl -fsSL "https://github.com/phpredis/phpredis/archive/${PHPREDIS_FOR_PHP_86}.tar.gz" | tar xz -C /tmp \
+        && cd "/tmp/phpredis-${PHPREDIS_FOR_PHP_86}" && phpize && ./configure --enable-redis && make -j"$(nproc)" && make install \
+        && docker-php-ext-enable redis && cd / && rm -rf "/tmp/phpredis-${PHPREDIS_FOR_PHP_86}"; \
+    else \
+        install-php-extensions pdo_pgsql pdo_mysql mbstring redis intl bcmath pcntl zip gd exif opcache uv; \
+    fi \
     && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
-    && php -m | grep -qx uv
+    && php -m | grep -qx uv && php -m | grep -qx redis && php -m | grep -qx mbstring
 
 # Two command-line tools an application may shell out to: pg_dump and pg_restore for its own logical
 # back-ups (Serverless SQL backs up one database per resource, not the databases an application
@@ -28,7 +43,8 @@ RUN apt-get update \
     && pg_dump --version && pdftotext -v 2>&1 | head -1
 
 # Refuse a PHP without the fixes of the 19 November 2026 security release
-# (CVE-2026-115560 among them), which also carries the PHP2Shell fix.
+# (CVE-2026-115560 among them), which also carries the PHP2Shell fix. For PHP
+# 8.6 that is its first release, 8.6.0, of the same day.
 RUN php -r '$min = ["8.3" => "8.3.37", "8.4" => "8.4.28", "8.5" => "8.5.13"][PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION] ?? "8.6.0"; if (version_compare(PHP_VERSION, $min, "<")) { fwrite(STDERR, "PHP ".PHP_VERSION." is older than ".$min.PHP_EOL); exit(1); }'
 
 # Defaults. An application that brings docker/Caddyfile, docker/entrypoint.sh
