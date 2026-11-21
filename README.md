@@ -11,7 +11,7 @@ without us.
 | `brewless-builder:php<version>` | The base plus Composer, Node 24, `crane`, `rclone`, the PostgreSQL 18 client, `pgloader` and the MariaDB client; the build job in your project runs in it, and so do a file import from another S3 bucket and a database import |
 | `brewless-realtime:<version>` | Laravel Reverb on its own, for the WebSockets of one application; see [Realtime](#realtime) |
 
-Published from this repository for PHP 8.3, 8.4 and 8.5, as
+Published from this repository for PHP 8.3, 8.4, 8.5 and 8.6, as
 `ghcr.io/brewless/brewless-base:php8.4` and `ghcr.io/brewless/brewless-builder:php8.4`
 (and likewise for the other versions). To build them yourself:
 
@@ -81,7 +81,7 @@ libuv. Without it PHP uses `stream_select`, which stops at 1,024 open files:
 the server of 1.0.0 stopped at connection 1,018.
 
 Each version is published once and never replaced: pin the full version
-(`brewless-realtime:1.1.1`) to get exactly that image, or follow `:1.1` or `:1`.
+(`brewless-realtime:1.2.0`) to get exactly that image, or follow `:1.2` or `:1`.
 Brewless pins a full version and moves to a new one with a deploy. The version
 is in [realtime/VERSION](realtime/VERSION).
 
@@ -101,7 +101,7 @@ three `REVERB_APP_*` values, `REVERB_HOST=localhost`, `REVERB_PORT=8080` and
 `REVERB_SCHEME=http`. To build it yourself:
 
 ```bash
-docker build --platform linux/amd64 --build-arg VERSION=1.1.1 -t <registry>/brewless-realtime:1.1.1 realtime
+docker build --platform linux/amd64 --build-arg VERSION=1.2.0 -t <registry>/brewless-realtime:1.2.0 realtime
 ```
 
 The build stops when a package in `composer.lock` is not under a permissive

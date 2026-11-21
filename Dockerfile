@@ -29,7 +29,7 @@ RUN apt-get update \
 
 # Refuse a PHP without the fixes of the 19 November 2026 security release
 # (CVE-2026-115560 among them), which also carries the PHP2Shell fix.
-RUN php -r '$min = ["8.3" => "8.3.37", "8.4" => "8.4.28"][PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION] ?? "8.5.13"; if (version_compare(PHP_VERSION, $min, "<")) { fwrite(STDERR, "PHP ".PHP_VERSION." is older than ".$min.PHP_EOL); exit(1); }'
+RUN php -r '$min = ["8.3" => "8.3.37", "8.4" => "8.4.28", "8.5" => "8.5.13"][PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION] ?? "8.6.0"; if (version_compare(PHP_VERSION, $min, "<")) { fwrite(STDERR, "PHP ".PHP_VERSION." is older than ".$min.PHP_EOL); exit(1); }'
 
 # Defaults. An application that brings docker/Caddyfile, docker/entrypoint.sh
 # or docker/php.ini replaces the one it brings.

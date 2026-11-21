@@ -2,6 +2,7 @@
 
 ## Not released yet
 
+- PHP 8.6 (8.6.0): `brewless-base` and `brewless-builder` are now built for `php8.6` too, and the build refuses an older 8.6. The default stays PHP 8.4. `brewless-realtime` 1.2.0 carries the guard for 8.6.
 - PHP 8.3.37, 8.4.28 and 8.5.13, the security release of 19 November 2026 (CVE-2026-115560 among its fixes); the build of `brewless-base`, `brewless-builder` and `brewless-realtime` refuses an older PHP. `brewless-realtime` 1.1.1 carries it.
 
 - `brewless-base` (and so `brewless-builder`) carries the `uv` extension. A realtime server on an application's own image (Laravel Reverb) holds its connections with libuv instead of `stream_select`, which stops at 1,024 open files. Measured on a Scaleway Serverless Container: without `uv` the server stopped at connection 1,018 and every browser was cut.
