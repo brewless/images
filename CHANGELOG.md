@@ -2,6 +2,7 @@
 
 ## Not released yet
 
+- What the build downloads is checked before it is used: the source of phpredis for the 8.6 image and the key of the PostgreSQL repository in `brewless-builder` are compared with a SHA-256 in the Dockerfile, and the build stops when one differs. The GitHub Actions of the publish workflow are taken by commit, not by tag.
 - PHP 8.6: `brewless-base` and `brewless-builder` are published for `php8.6` too, on FrankenPHP's `1-php8.6` image (PHP 8.6.0 of 19 November 2026), with the same extensions as the other versions. Two things differ underneath. The released `redis` extension (6.3.0) does not compile on PHP 8.6, so the 8.6 image builds it from the commit of phpredis's development branch that phpredis tests on 8.6 (`PHPREDIS_FOR_PHP_86` in the Dockerfile), until a release does. And PHP's own 8.6 image no longer has `mbstring` compiled in, so the build adds it. The build refuses an 8.6 older than 8.6.0 and an image without `redis` or `mbstring`. Without `PHP_VERSION` the Dockerfile still builds for 8.4. `brewless-realtime` 1.2.0 carries the same refusal for 8.6 and still runs on PHP 8.4.
 - PHP 8.3.37, 8.4.28 and 8.5.13, the security release of 19 November 2026 (CVE-2026-115560 among its fixes); the build of `brewless-base`, `brewless-builder` and `brewless-realtime` refuses an older PHP. `brewless-realtime` 1.1.1 carries it.
 

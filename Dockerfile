@@ -22,10 +22,15 @@ FROM dunglas/frankenphp:1-php${PHP_VERSION} AS base
 #
 # mbstring: PHP's own 8.6 image, which FrankenPHP's is built on, no longer has it compiled in, and
 # Laravel does not start without it. On the older versions it is there already and nothing is done.
+# What is downloaded is checked against its SHA-256 before it is unpacked: the commit and the
+# checksum are changed together.
 ARG PHPREDIS_FOR_PHP_86=a6ce1e60b3e81ce3b25174aa5aaefd5590dc64fd
+ARG PHPREDIS_FOR_PHP_86_SHA256=79288312706263ad0744391752fd9a62273d5a73c4e6e6a42ff2819e76363533
 RUN if [ "$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')" = "8.6" ]; then \
         install-php-extensions pdo_pgsql pdo_mysql mbstring intl bcmath pcntl zip gd exif opcache uv \
-        && curl -fsSL "https://github.com/phpredis/phpredis/archive/${PHPREDIS_FOR_PHP_86}.tar.gz" | tar xz -C /tmp \
+        && curl -fsSL -o /tmp/phpredis.tar.gz "https://github.com/phpredis/phpredis/archive/${PHPREDIS_FOR_PHP_86}.tar.gz" \
+        && echo "${PHPREDIS_FOR_PHP_86_SHA256}  /tmp/phpredis.tar.gz" | sha256sum -c - \
+        && tar xzf /tmp/phpredis.tar.gz -C /tmp && rm /tmp/phpredis.tar.gz \
         && cd "/tmp/phpredis-${PHPREDIS_FOR_PHP_86}" && phpize && ./configure --enable-redis && make -j"$(nproc)" && make install \
         && docker-php-ext-enable redis && cd / && rm -rf "/tmp/phpredis-${PHPREDIS_FOR_PHP_86}"; \
     else \
@@ -87,11 +92,17 @@ COPY --from=gcr.io/go-containerregistry/crane:latest /ko-app/crane /usr/local/bi
 COPY --from=rclone/rclone:1.75.2 /usr/local/bin/rclone /usr/local/bin/rclone
 COPY --from=ghcr.io/dimitri/pgloader@sha256:a1d4a78e78a64e46cd3fc7dfc57d24eb91ffb1a5520f2b1f55631815e3658d6e /usr/local/bin/pgloader /usr/local/bin/pgloader
 
+# The key the PostgreSQL repository signs its packages with (fingerprint
+# B97B 0AFC AA1A 47F0 44F2 44A0 7FCC 7D46 ACCC 4CF8) is checked against its SHA-256 before apt
+# trusts it. When PostgreSQL extends the key the file changes and the build stops here: compare the
+# fingerprint of the new file, then put its checksum below.
+ARG PGDG_KEY_SHA256=0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
     && apt-get update && apt-get install -y --no-install-recommends unzip git ca-certificates curl \
     && install -d /usr/share/postgresql-common/pgdg \
     && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo "${PGDG_KEY_SHA256}  /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc" | sha256sum -c - \
     && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 mariadb-client \
     && rm -rf /var/lib/apt/lists/* \
