@@ -104,7 +104,7 @@ COPY --from=ghcr.io/dimitri/pgloader@sha256:a1d4a78e78a64e46cd3fc7dfc57d24eb91ff
 ARG PGDG_KEY_SHA256=0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
-    && apt-get update && apt-get install -y --no-install-recommends unzip git ca-certificates curl \
+    && apt-get update && apt-get install -y --no-install-recommends unzip git openssh-client ca-certificates curl \
     && install -d /usr/share/postgresql-common/pgdg \
     && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
     && echo "${PGDG_KEY_SHA256}  /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc" | sha256sum -c - \
@@ -112,7 +112,7 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 mariadb-client \
     && rm -rf /var/lib/apt/lists/* \
     && rm /etc/mysql/my.cnf && printf '[client]\n' > /etc/mysql/my.cnf \
-    && php -v && composer --version && node --version && npm --version && crane version && rclone version \
+    && php -v && composer --version && node --version && npm --version && crane version && rclone version && ssh -V \
     && pg_dump --version | grep -q " 18\." && psql --version && pgloader --version && mariadb-dump --version
 
 ENTRYPOINT []

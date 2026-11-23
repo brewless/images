@@ -2,6 +2,7 @@
 
 ## Not released yet
 
+- `brewless-builder` carries `openssh-client` (`ssh`, `ssh-keygen`, `ssh-keyscan`), so a job in the customer's project can fetch a private repository with a read-only deploy key.
 - The build pipeline is tightened. A pull request only builds the images, with a token that may read the repository and nothing else; before, its token could write packages. Only `main` is published, also when the workflow is started by hand from another branch. The checkout leaves no token in `.git`, and `.dockerignore` keeps `.git` out of the build context.
 - The tools `brewless-builder` copies from other images (Composer, Node, crane, rclone) are taken by digest, as pgloader was, and crane by release (v0.22.1) instead of `latest`. Dependabot proposes a new digest or commit when one of them, or an action, is released. The FrankenPHP image the base starts from still follows its tag on purpose, so a rebuild picks up a patched PHP.
 - `brewless-realtime`: Composer installs the packages without running their scripts or plugins, so no code of a package runs before its licence was checked; Laravel's package discovery is run by name afterwards. Takes effect with the next version of the image.
