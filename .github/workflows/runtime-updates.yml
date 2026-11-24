@@ -44,10 +44,11 @@ jobs:
               echo "::notice::PHP $upstream is out; our images carry ${ours:-nothing}."
             fi
             if [ "$(printf '%s\n%s\n' "$guard" "$upstream" | sort -V | tail -n 1)" != "$guard" ]; then
-              if [ "$version" = 8.5 ]; then
-                sed -i -E "s/\?\? \"$guard\"/?? \"$upstream\"/" Dockerfile realtime/Dockerfile
-              else
+              # A version in the map has its own minimum; the newest one is the fallback after ??.
+              if grep -q "\"$version\" =>" Dockerfile; then
                 sed -i -E "s/\"$version\" => \"$guard\"/\"$version\" => \"$upstream\"/" Dockerfile realtime/Dockerfile
+              else
+                sed -i -E "s/\?\? \"$guard\"/?? \"$upstream\"/" Dockerfile realtime/Dockerfile
               fi
             fi
           done < releases.txt

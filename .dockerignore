@@ -1,0 +1,7 @@
+# Nothing of the repository itself belongs in an image: the checkout holds its history, and on a
+# runner the token it was fetched with.
+.git
+.github
+realtime
+*.md
+LICENSE

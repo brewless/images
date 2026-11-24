@@ -7,7 +7,7 @@
 # Reads Docker Hub and ghcr.io without a key. Used by .github/workflows/patches.yml.
 set -euo pipefail
 
-VERSIONS="${VERSIONS:-8.3 8.4 8.5}"
+VERSIONS="${VERSIONS:-8.3 8.4 8.5 8.6}"
 OWNER="${OWNER:-brewless}"
 
 upstream() {
@@ -36,13 +36,14 @@ ours() {
 }
 
 guard() {
-  # The map in the Dockerfile's version check: ["8.3" => "8.3.37", "8.4" => "8.4.28"] ?? "8.5.13" (the last is 8.5).
+  # The map in the Dockerfile's version check: ["8.3" => "8.3.37", "8.4" => "8.4.28", "8.5" => "8.5.13"] ?? "8.6.0".
+  # A version in the map has its own minimum; the newest one is the fallback after ??.
   local line
   line=$(grep -o '\$min = \[[^]]*\][^?]*?? "[0-9.]*"' Dockerfile)
-  if [ "$1" = "8.5" ]; then
-    echo "$line" | sed -E 's/.*\?\? "([0-9.]+)".*/\1/'
-  else
+  if echo "$line" | grep -q "\"$1\" =>"; then
     echo "$line" | grep -o "\"$1\" => \"[0-9.]*\"" | sed -E 's/.*=> "([0-9.]+)"/\1/'
+  else
+    echo "$line" | sed -E 's/.*\?\? "([0-9.]+)".*/\1/'
   fi
 }
 

@@ -1,11 +1,10 @@
 name: Images
 
-# Every push to main publishes the images to the GitHub Container Registry;
-# a pull request only builds them.
+# A push to main publishes the images to the GitHub Container Registry. Started by hand it does the
+# same, and only from main: another branch is not published under the names everybody pulls.
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
     inputs:
       reason:
@@ -15,35 +14,16 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  images:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        php: ['8.3', '8.4', '8.5']
-        target: [base, builder]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
-        if: github.event_name != 'pull_request'
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          target: ${{ matrix.target }}
-          build-args: PHP_VERSION=${{ matrix.php }}
-          platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ghcr.io/${{ github.repository_owner }}/brewless-${{ matrix.target }}:php${{ matrix.php }}
-          cache-from: type=gha,scope=${{ matrix.target }}-${{ matrix.php }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.target }}-${{ matrix.php }}
+  publish:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/images.yml
+    with:
+      publish: true
 
   # Tell Brewless the images are published (BL-303), with the realtime version and what the runtime-updates
   # workflow published for. Brewless reads the images from ghcr.io itself and rolls new ones out to every
@@ -51,11 +31,13 @@ jobs:
   # its moment and body with the shared secret. The address and the secret are repository secrets: the
   # Actions logs of this public repository never show them.
   notify:
-    needs: [images, realtime]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [publish]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Call Brewless
         env:
           URL: ${{ secrets.BREWLESS_IMAGES_WEBHOOK_URL }}
@@ -72,67 +54,3 @@ jobs:
           signature="sha256=$(printf '%s' "$moment.$body" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)"
           curl -fsS -o /dev/null -X POST "$URL" -H 'Content-Type: application/json' -H "X-Brewless-Timestamp: $moment" -H "X-Brewless-Signature: $signature" --data "$body" 2>/dev/null \
             || { echo "::error::Brewless did not take the report (the address and the error are left out of this public log)."; exit 1; }
-
-  # brewless-realtime carries its own version (realtime/VERSION). A published
-  # version is never replaced: Brewless pins it, so a change to the image
-  # publishes only once the version is raised. Tags: 1.0.0, 1.0 and 1.
-  realtime:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
-        if: github.event_name != 'pull_request'
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - name: Version
-        id: version
-        env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/brewless-realtime
-          EVENT: ${{ github.event_name }}
-        run: |
-          version="$(tr -d '[:space:]' < realtime/VERSION)"
-          echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::realtime/VERSION is not x.y.z: $version"; exit 1; }
-          publish=true
-          if [ "$EVENT" = pull_request ]; then
-            publish=false
-          elif docker buildx imagetools inspect "$IMAGE:$version" >/dev/null 2>&1; then
-            publish=false
-            echo "::notice::$IMAGE:$version is already published; raise realtime/VERSION to publish a change."
-          fi
-          {
-            echo "version=$version"
-            echo "publish=$publish"
-            echo "tags=$IMAGE:$version,$IMAGE:${version%.*},$IMAGE:${version%%.*}"
-          } >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v7
-        with:
-          context: realtime
-          build-args: VERSION=${{ steps.version.outputs.version }}
-          platforms: linux/amd64
-          load: true
-          tags: brewless-realtime:ci
-          cache-from: type=gha,scope=realtime
-          cache-to: type=gha,mode=max,scope=realtime
-      - name: Smoke test
-        run: |
-          docker run -d --name realtime -p 8080:8080 \
-            -e REVERB_APP_ID=123456 -e REVERB_APP_KEY=ci-key -e REVERB_APP_SECRET=ci-secret brewless-realtime:ci
-          for i in $(seq 1 20); do curl -fsS http://localhost:8080/up && break; sleep 1; done
-          curl -fsS http://localhost:8080/up
-          docker stop realtime
-          test "$(docker inspect -f '{{.State.ExitCode}}' realtime)" = 0
-          docker logs realtime 2>&1 | grep -q 'code 4200'
-          out="$(timeout 30 docker run --rm brewless-realtime:ci 2>&1 || true)"
-          echo "$out" | grep -q 'missing required variable'
-      - name: Push
-        if: steps.version.outputs.publish == 'true'
-        env:
-          TAGS: ${{ steps.version.outputs.tags }}
-        run: |
-          for tag in $(echo "$TAGS" | tr ',' ' '); do
-            docker tag brewless-realtime:ci "$tag"
-            docker push "$tag"
-          done

@@ -4,7 +4,7 @@
 # its own, for one customer application at a time. No database, no cache
 # server, no code of that application: only the keys it broadcasts with.
 #
-#   docker build --platform linux/amd64 -t <registry>/brewless-realtime:1.1.0 realtime
+#   docker build --platform linux/amd64 -t <registry>/brewless-realtime:1.2.0 realtime
 
 ARG PHP_VERSION=8.4
 
@@ -27,21 +27,26 @@ RUN apk add --no-cache libuv \
 # them up, which is what the scheduled scan relies on (runtime-updates.yml, BL-303).
 RUN apk upgrade --no-cache
 
-# Refuse a PHP without the PHP2Shell fix (CVE-2026-109618, CVE-2026-109619).
-RUN php -r '$min = ["8.3" => "8.3.36", "8.4" => "8.4.27"][PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION] ?? "8.5.12"; if (version_compare(PHP_VERSION, $min, "<")) { fwrite(STDERR, "PHP ".PHP_VERSION." is older than ".$min.PHP_EOL); exit(1); }'
+# Refuse a PHP without the fixes of the 19 November 2026 security release
+# (CVE-2026-115560 among them), which also carries the PHP2Shell fix.
+RUN php -r '$min = ["8.3" => "8.3.37", "8.4" => "8.4.28", "8.5" => "8.5.13"][PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION] ?? "8.6.0"; if (version_compare(PHP_VERSION, $min, "<")) { fwrite(STDERR, "PHP ".PHP_VERSION." is older than ".$min.PHP_EOL); exit(1); }'
 
 FROM php AS vendor
 
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2@sha256:50ea4d33fdcde1adb0f045547295faa1548b33872e5f789dae5b02ce2fb5de93 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 COPY . .
 
 # The packages from composer.lock, without development packages; the build
-# stops when one of them is not under a permissive licence.
-RUN composer install --no-dev --no-interaction --no-progress --classmap-authoritative \
-    && composer licenses --no-dev --format=json | php check-licenses.php \
-    && test -f vendor/laravel/framework/LICENSE.md && test -f vendor/laravel/reverb/LICENSE.md
+# stops when one of them is not under a permissive licence. They are installed
+# without running anything of theirs (no scripts, no plugins), so no code of a
+# package runs before its licence was looked at; what Laravel does after an
+# install, finding its packages, is run by name afterwards.
+RUN composer install --no-dev --no-interaction --no-progress --classmap-authoritative --no-scripts --no-plugins \
+    && composer licenses --no-dev --no-plugins --format=json | php check-licenses.php \
+    && test -f vendor/laravel/framework/LICENSE.md && test -f vendor/laravel/reverb/LICENSE.md \
+    && php artisan package:discover --ansi
 
 FROM php
 
