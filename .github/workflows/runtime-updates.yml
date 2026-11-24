@@ -29,7 +29,7 @@ jobs:
   updates:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # A new PHP minor (8.7 after 8.6, or 9.0) comes in by itself once FrankenPHP publishes a stable
       # release of it (BL-305): it is appended to php-versions, which the build matrix and the steps
