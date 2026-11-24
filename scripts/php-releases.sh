@@ -4,10 +4,12 @@
 #
 #   8.4 upstream=8.4.28 ours=8.4.27 guard=8.4.27
 #
-# Reads Docker Hub and ghcr.io without a key. Used by .github/workflows/patches.yml.
+# Reads Docker Hub and ghcr.io without a key. Used by .github/workflows/runtime-updates.yml. The
+# versions are the lines of php-versions, unless VERSIONS names them. scripts/new-php-minor.sh sources
+# this file for upstream(); sourced, it prints nothing.
 set -euo pipefail
 
-VERSIONS="${VERSIONS:-8.3 8.4 8.5 8.6}"
+VERSIONS="${VERSIONS:-$(grep -E '^[0-9]+\.[0-9]+$' php-versions | tr '\n' ' ')}"
 OWNER="${OWNER:-brewless}"
 
 upstream() {
@@ -47,6 +49,8 @@ guard() {
   fi
 }
 
-for v in $VERSIONS; do
-  echo "$v upstream=$(upstream "$v") ours=$(ours "$v") guard=$(guard "$v")"
-done
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  for v in $VERSIONS; do
+    echo "$v upstream=$(upstream "$v") ours=$(ours "$v") guard=$(guard "$v")"
+  done
+fi

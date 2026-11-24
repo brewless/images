@@ -1,7 +1,7 @@
 name: Runtime security updates
 
 # Every hour, around the clock (BL-303). It runs here, outside Brewless, so it wakes no container:
-#   1. is a newer PHP release out than the one in our published images?
+#   1. is a newer PHP release out than the one in our published images, or a new PHP minor?
 #   2. what does Trivy find in the published images (CRITICAL and HIGH)?
 # A newer PHP release, or a finding with a fix that was not rebuilt for before, raises the minimum in
 # the Dockerfile, updates the realtime image's Composer packages and version where needed, commits
@@ -30,6 +30,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      # A new PHP minor (8.7 after 8.6, or 9.0) comes in by itself once FrankenPHP publishes a stable
+      # release of it (BL-305): it is appended to php-versions, which the build matrix and the steps
+      # below read, and gets its minimum in the Dockerfiles' version check. The next step then finds no
+      # image of ours for it, so the commit and publish below build and publish it.
+      - name: Look for a new PHP minor
+        id: minor
+        run: |
+          added=$(bash scripts/new-php-minor.sh)
+          echo "added=$added" >> "$GITHUB_OUTPUT"
 
       - name: Compare PHP releases
         id: php
@@ -90,16 +100,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PHP: ${{ steps.php.outputs.newer }}
+          ADDED: ${{ steps.minor.outputs.added }}
         run: |
           jq -c '[.[] | .image + "|" + .id]' fixable.json > security/rebuilt.json
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add Dockerfile realtime security
+          git add php-versions Dockerfile realtime security
           message="fix: security update of the runtime images"
+          if [ "$ADDED" != '[]' ]; then
+            message="feat: PHP $(echo "$ADDED" | jq -r 'join(" and ")') available"
+          fi
           [ "$PHP" = '{}' ] || message="$message (PHP $(echo "$PHP" | jq -r '[.[]] | join(", ")'))"
           git commit -m "$message" -m "$(jq -r '.[] | "- \(.id) in \(.package) (\(.image)), fixed in \(.fixed)"' new.json)" || true
           git push origin HEAD:main
-          reason=$(jq -cn --argjson php "$PHP" --slurpfile new new.json '{php: $php, vulnerabilities: [$new[0][] | {id, severity, image, package, fixed}]}')
+          reason=$(jq -cn --argjson php "$PHP" --argjson added "$ADDED" --slurpfile new new.json '{php: $php, new_versions: $added, vulnerabilities: [$new[0][] | {id, severity, image, package, fixed}]}')
           # A push with this workflow's token starts no other workflow, so publish is started by name.
           gh workflow run publish.yml --ref main -f reason="$reason"
 

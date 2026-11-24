@@ -6,7 +6,8 @@
 set -euo pipefail
 
 OWNER="${OWNER:-brewless}"
-VERSIONS="${VERSIONS:-8.3 8.4 8.5 8.6}"
+# The versions are the lines of php-versions, unless VERSIONS names them.
+VERSIONS="${VERSIONS:-$(grep -E '^[0-9]+\.[0-9]+$' php-versions | tr '\n' ' ')}"
 # Pinned: a scanner that changes under us changes what we rebuild for.
 TRIVY_IMAGE="${TRIVY_IMAGE:-aquasec/trivy:0.58.1}"
 

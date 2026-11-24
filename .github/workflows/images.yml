@@ -14,12 +14,32 @@ on:
 # The actions are taken by commit, not by tag: a tag can be moved to other code,
 # a commit cannot. To update one, change the commit and the version behind it together.
 jobs:
+  # The PHP versions are the lines of php-versions (BL-305), which runtime-updates.yml adds a new
+  # minor to by itself; the matrix below is made from it, so no version is listed here.
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      php: ${{ steps.read.outputs.php }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read php-versions
+        id: read
+        run: |
+          if grep -vqE '^[0-9]+\.[0-9]+$' php-versions; then
+            echo "::error::php-versions holds a line that is not a version such as 8.4."
+            exit 1
+          fi
+          echo "php=$(jq -R . php-versions | jq -cs .)" >> "$GITHUB_OUTPUT"
+
   images:
+    needs: [versions]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.3', '8.4', '8.5', '8.6']
+        php: ${{ fromJSON(needs.versions.outputs.php) }}
         target: [base, builder]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

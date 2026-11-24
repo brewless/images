@@ -11,9 +11,11 @@ without us.
 | `brewless-builder:php<version>` | The base plus Composer, Node 24, `crane`, `rclone`, the PostgreSQL 18 client, `pgloader` and the MariaDB client; the build job in your project runs in it, and so do a file import from another S3 bucket and a database import |
 | `brewless-realtime:<version>` | Laravel Reverb on its own, for the WebSockets of one application; see [Realtime](#realtime) |
 
-Published from this repository for PHP 8.3, 8.4, 8.5 and 8.6, as
+Published from this repository for every PHP version in `php-versions`, one
+per line (today 8.3, 8.4, 8.5 and 8.6), as
 `ghcr.io/brewless/brewless-base:php8.4` and `ghcr.io/brewless/brewless-builder:php8.4`
-(and likewise for the other versions). To build them yourself:
+(and likewise for the other versions). A new PHP minor comes in by itself; see
+[below](#security-updates-by-themselves). To build them yourself:
 
 ```bash
 docker build --platform linux/amd64 --build-arg PHP_VERSION=8.4 --target base    -t <registry>/brewless-base:php8.4 .
@@ -30,6 +32,14 @@ no rebuild was made for yet (`security/rebuilt.json`), raises the minimum in the
 Dockerfile, updates the Composer packages of `brewless-realtime` and its version
 where needed, commits that and starts `publish.yml`. The images upgrade their
 Debian and Alpine packages when they are built, so a rebuild takes those fixes.
+
+A new PHP minor comes in the same way (`scripts/new-php-minor.sh`). After the
+newest line of `php-versions`, say 8.6, the run looks for 8.7 and for 9.0. Once
+FrankenPHP has a stable release of one (`dunglas/frankenphp:1-php8.7.0`, so no
+alpha, beta or RC), it is added to `php-versions`, the Dockerfile's minimum for
+it is set to that release, and the images for it are built and published. The
+build matrix, the release watch and the scan all read `php-versions`, so no
+other list needs changing.
 
 Once published, `publish.yml` tells Brewless through a signed webhook, with the
 realtime version and the vulnerabilities it fixed, and Brewless puts the new

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       reason:
-        description: 'What the runtime-updates workflow published for, as JSON: {"php": {...}, "vulnerabilities": [...]}'
+        description: 'What the runtime-updates workflow published for, as JSON: {"php": {...}, "new_versions": [...], "vulnerabilities": [...]}'
         required: false
         default: '{}'
 
@@ -26,7 +26,7 @@ jobs:
       publish: true
 
   # Tell Brewless the images are published (BL-303), with the realtime version and what the runtime-updates
-  # workflow published for. Brewless reads the images from ghcr.io itself and rolls new ones out to every
+  # workflow published for, the new PHP minors among it (new_versions, BL-305) included. Brewless reads the images from ghcr.io itself and rolls new ones out to every
   # application; it only acts when a digest changed, so every publish may call. The request is signed over
   # its moment and body with the shared secret. The address and the secret are repository secrets: the
   # Actions logs of this public repository never show them.
@@ -49,7 +49,7 @@ jobs:
             exit 0
           fi
           version="$(tr -d '[:space:]' < realtime/VERSION)"
-          body=$(echo "$REASON" | jq -c --arg realtime "$version" '{event: "published", realtime: (if $realtime == "" then null else $realtime end), vulnerabilities: (.vulnerabilities // [])}')
+          body=$(echo "$REASON" | jq -c --arg realtime "$version" '{event: "published", realtime: (if $realtime == "" then null else $realtime end), vulnerabilities: (.vulnerabilities // []), new_versions: (.new_versions // [])}')
           moment="$(date +%s)"
           signature="sha256=$(printf '%s' "$moment.$body" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)"
           curl -fsS -o /dev/null -X POST "$URL" -H 'Content-Type: application/json' -H "X-Brewless-Timestamp: $moment" -H "X-Brewless-Signature: $signature" --data "$body" 2>/dev/null \
