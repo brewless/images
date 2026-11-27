@@ -4,7 +4,7 @@
 # its own, for one customer application at a time. No database, no cache
 # server, no code of that application: only the keys it broadcasts with.
 #
-#   docker build --platform linux/amd64 -t <registry>/brewless-realtime:1.2.1 realtime
+#   docker build --platform linux/amd64 -t <registry>/brewless-realtime:1.2.2 realtime
 
 ARG PHP_VERSION=8.4
 
