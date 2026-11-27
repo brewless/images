@@ -10,6 +10,7 @@ without us.
 | `brewless-base:php<version>` | What an application runs on: FrankenPHP, the usual PHP extensions and `uv` (the event loop of a realtime server), `pg_dump` and `pdftotext`, a default server configuration and entrypoint |
 | `brewless-builder:php<version>` | The base plus Composer, Node 24, `crane`, `rclone`, the PostgreSQL 18 client, `pgloader` and the MariaDB client; the build job in your project runs in it, and so do a file import from another S3 bucket and a database import |
 | `brewless-realtime:<version>` | Laravel Reverb on its own, for the WebSockets of one application; see [Realtime](#realtime) |
+| `brewless-malware:<version>` | ClamAV and the runner of Malware Protection, which scans Object Storage buckets in the customer's own Scaleway account; see [Malware Protection](#malware-protection) |
 
 Published from this repository for every PHP version in `php-versions`, one
 per line (today 8.3, 8.4, 8.5 and 8.6), as
@@ -135,6 +136,81 @@ docker build --platform linux/amd64 --build-arg VERSION=1.2.0 -t <registry>/brew
 
 The build stops when a package in `composer.lock` is not under a permissive
 licence (MIT, BSD, Apache-2.0, ISC).
+
+## Malware Protection
+
+`ghcr.io/brewless/brewless-malware` is the official ClamAV image
+(`clamav/clamav-debian:1.5_base`, taken by digest) with one program added:
+`/usr/local/bin/brewless-malware`, a small runner written in Go with only its
+standard library ([malware/](malware)). Brewless runs it as Scaleway Serverless
+Jobs, and optionally as a Serverless Container, in the customer's own Scaleway
+account, with a key that belongs to that account. It holds no signatures and no
+secret; nothing in it calls Brewless except the signed reports below. The
+agreement between this image, Brewless and the Laravel package is
+`docs/malware-protection/contract.md` in brewless/app.
+
+Scaleway Object Storage has no event notifications, but it writes one log line
+per request to Cockpit. `watch` reads those lines, so a new object is queued
+within minutes of its upload without anything in the application.
+
+| Command | What it does |
+| --- | --- |
+| `watch` | Reads the Object Storage log lines from Cockpit since its cursor, queues every object written to a bucket that is scanned, notices new and deleted buckets, and starts `scan` (Serverless Jobs API) when an item is ready, no scan runs and the day's `scan_seconds_per_day` is not used up. Needs no ClamAV |
+| `scan` | Copies the definitions from the private bucket, takes ready items from the queue, downloads each object to the scratch disk (with `If-Match`, so it scans exactly the ETag it saw), scans them in batches, checks with a HEAD that the ETag did not change, merges three tags into the object's own (`brewless-av`, `brewless-av-etag`, `brewless-av-at`; at most 10 tags, the customer's are never dropped), writes the register, releases or quarantines, and sends one `scan.completed` report |
+| `update` | Runs the official `freshclam` on the definitions of the private bucket (so it downloads only differences, and keeps its cool-down) and writes them back; on a 429 or 403 from the ClamAV CDN it uses `MW_MIRROR_URL` |
+| `reconcile` | Lists every scanned bucket against the register and queues objects that are new, changed or were missed by the logs; removes the register entries of objects that are gone; reports new, removed and unreadable buckets |
+| `serve` | An HTTP interface around clamd: `POST /scan` with the file as body, or JSON `{"bucket","key","project"}`, answers `{"status","signature","clamav","definitions","ms"}`; `GET /health` is 200 once clamd is ready |
+| `selftest` | Scans a generated EICAR file, a clean file and a file over a lowered limit with clamscan, clamdscan and clamd's INSTREAM, and exits non-zero on a wrong verdict |
+
+A result is `clean`, `infected`, `unsupported` (ClamAV said
+`Heuristics.Limits.Exceeded.*` or `Heuristics.Encrypted.*`, or the object is
+larger than `max_file_bytes`, at most 2 GiB, which ClamAV cannot scan),
+`failed` (tried again after 1, 4 and 16 minutes, then reported) or
+`quarantined`. In a bucket in protection mode the application uploads to a
+staging prefix (`incoming/`): a clean object is copied out of it and tagged with
+the copy's own ETag, an infected one goes to quarantine, and anything else stays
+where the application does not read it.
+
+| Variable | |
+| --- | --- |
+| `MW_REGION`, `MW_PROJECT_ID`, `MW_BUCKET` | The region, the project and the private bucket that holds `config.json`, the queue, the register, the definitions and `status.json` |
+| `MW_ACCESS_KEY`, `MW_SECRET_KEY` | The key of the protection's IAM application. S3 requests are signed with it (SigV4, `https://s3.<region>.scw.cloud`, `ACCESSKEY@<project>` for another project); Cockpit and the Jobs API get it as `X-Auth-Token` |
+| `MW_WEBHOOK_URL`, `MW_WEBHOOK_SECRET` | Where reports go, signed with `X-Brewless-Signature: sha256=<HMAC-SHA256(secret, timestamp + "." + body)>` and `X-Brewless-Timestamp`. A report holds keys, sizes, ETags and signature names, never file contents |
+| `MW_SCAN_JOB_ID` | (`watch`) The job definition of `scan` |
+| `MW_MIRROR_URL` | (`update`) The fallback mirror |
+| `MW_SCRATCH` | Default `/var/lib/brewless-malware`: downloads and definitions, on disk because `/tmp` is memory in a Serverless Job |
+| `MW_DB_DIR` | Use the definitions in this directory instead of the bucket's (`selftest`, and `update` without `MW_BUCKET`, locally and in CI) |
+| `PORT`, `MW_STREAM_MAX`, `MW_THREADS` | (`serve`) Port (8080), the largest body (`100M`) and clamd's threads (the CPUs) |
+
+The image runs as the `clamav` user (1000) and works as root too, which a
+Serverless Job may use; it switches no users. Its entrypoint is the runner, so
+the ClamAV image's own entrypoint, which would start freshclam and clamd, never
+runs. Measurements of memory and CPU are in
+[malware/BENCHMARK.md](malware/BENCHMARK.md). To try it on your own machine,
+fetch the signatures once into a volume and run the selftest:
+
+```bash
+docker build --platform linux/amd64 --build-arg VERSION=1.0.0 -t brewless-malware:local malware
+docker volume create clamav-db
+docker run --rm --user 0 -v clamav-db:/db -e MW_DB_DIR=/db brewless-malware:local update
+docker run --rm -v clamav-db:/db:ro -e MW_DB_DIR=/db brewless-malware:local selftest
+```
+
+`.github/workflows/malware.yml` builds it (the Go tests run inside the build),
+runs the selftest with signatures it caches and updates at most once a day,
+and publishes from `main` once per version in `malware/VERSION`
+(`1.0.0`, `1.0`, `1`; a published version is never replaced). Every Monday it
+raises the version and publishes again when ClamAV published a new `1.5_base`
+image or the Debian packages have fixes. `.github/workflows/signature-mirror.yml`
+keeps Brewless's mirror of the signatures with
+[cvdupdate](https://github.com/Cisco-Talos/cvdupdate) every four hours, in the
+bucket that the repository secrets `MIRROR_S3_ENDPOINT`, `MIRROR_REGION`,
+`MIRROR_BUCKET`, `MIRROR_ACCESS_KEY` and `MIRROR_SECRET_KEY` name.
+
+ClamAV is licensed under the GNU GPL, version 2, and is not changed here; the
+image's `/usr/share/doc/brewless-malware/NOTICE` says where its exact source
+is. The runner is MIT, like the rest of this repository. "ClamAV" is a
+trademark of Cisco; this image is not made, endorsed or supported by Cisco.
 
 ## Licence
 
