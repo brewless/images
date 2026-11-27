@@ -5,6 +5,9 @@ name: Images
 on:
   push:
     branches: [main]
+    # brewless-malware has its own workflow (malware.yml); a change to it alone rebuilds and rolls out
+    # no base or builder image.
+    paths-ignore: ['malware/**', '.github/workflows/malware.yml', '.github/workflows/signature-mirror.yml']
   workflow_dispatch:
     inputs:
       reason:

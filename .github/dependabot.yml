@@ -11,7 +11,7 @@ updates:
         patterns: ['*']
 
   - package-ecosystem: docker
-    directories: ['/', '/realtime']
+    directories: ['/', '/realtime', '/malware']
     schedule:
       interval: weekly
     groups:

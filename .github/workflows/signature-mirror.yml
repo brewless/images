@@ -1,0 +1,75 @@
+name: ClamAV signature mirror
+
+# Brewless's own mirror of the ClamAV signatures (BL-335), the fallback of `brewless-malware update`
+# (MW_MIRROR_URL) when the ClamAV CDN answers 429 or 403 to a customer's job. It runs cvdupdate, the
+# tool ClamAV made for mirrors, every four hours, which is as often as ClamAV asks a mirror to check.
+# cvdupdate's state and database are cached between runs, so each run downloads only what is new,
+# and the result is synced to an S3-compatible bucket whose objects are public-read: freshclam
+# reads the mirror without credentials (PrivateMirror https://<bucket address>).
+#
+# The bucket is given by five repository secrets, so this public repository's logs never show it:
+# MIRROR_S3_ENDPOINT (https://s3.fr-par.scw.cloud), MIRROR_REGION (fr-par), MIRROR_BUCKET,
+# MIRROR_ACCESS_KEY and MIRROR_SECRET_KEY (a key that may write that bucket and nothing else).
+# Without them the run does nothing.
+on:
+  schedule:
+    - cron: '23 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signature-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    env:
+      ENDPOINT: ${{ secrets.MIRROR_S3_ENDPOINT }}
+      REGION: ${{ secrets.MIRROR_REGION }}
+      BUCKET: ${{ secrets.MIRROR_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.MIRROR_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.MIRROR_SECRET_KEY }}
+      # Newer AWS CLIs add checksums that S3-compatible stores such as Scaleway's refuse.
+      AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
+      AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
+    steps:
+      - name: Check the secrets
+        id: secrets
+        run: |
+          if [ -z "$ENDPOINT" ] || [ -z "$REGION" ] || [ -z "$BUCKET" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::warning::A MIRROR_* secret is not set; the mirror is not updated."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Restore cvdupdate's state
+        if: steps.secrets.outputs.ready == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cvdupdate
+          key: cvd-mirror-${{ github.run_id }}
+          restore-keys: cvd-mirror-
+      - name: Update
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          # Pinned: a mirror tool that changes under us changes what every customer falls back to.
+          python3 -m pip install --user --quiet 'cvdupdate==1.2.0'
+          cvd config set --dbdir "$HOME/.cvdupdate/database"
+          cvd update
+          ls -l "$HOME/.cvdupdate/database"
+          test -s "$HOME/.cvdupdate/database/daily.cvd"
+      - name: Save cvdupdate's state
+        if: steps.secrets.outputs.ready == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cvdupdate
+          key: cvd-mirror-${{ github.run_id }}
+      - name: Upload
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          aws s3 sync "$HOME/.cvdupdate/database/" "s3://$BUCKET/" --endpoint-url "$ENDPOINT" --region "$REGION" \
+            --acl public-read --delete --only-show-errors \
+            || { echo "::error::The mirror bucket did not take the upload (its address is left out of this public log)."; exit 1; }
