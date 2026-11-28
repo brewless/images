@@ -7,7 +7,8 @@ on:
     branches: [main]
     # brewless-malware has its own workflow (malware.yml); a change to it alone rebuilds and rolls out
     # no base or builder image.
-    paths-ignore: ['malware/**', '.github/workflows/malware.yml', '.github/workflows/signature-mirror.yml']
+    # Nor does a change to the hourly watch or to what it remembers (security/): those rebuild when they find something.
+    paths-ignore: ['malware/**', '.github/workflows/malware.yml', '.github/workflows/signature-mirror.yml', '.github/workflows/runtime-updates.yml', 'security/**']
   workflow_dispatch:
     inputs:
       reason:

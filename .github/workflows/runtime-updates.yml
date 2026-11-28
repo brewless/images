@@ -74,7 +74,9 @@ jobs:
           mkdir -p security
           [ -f security/rebuilt.json ] || echo '[]' > security/rebuilt.json
           jq -c '[.[] as $s | $s.findings[] | select(.fixed != null) | {id, severity, image: $s.image, package, fixed, type}]' scans.json > fixable.json
-          jq -c --slurpfile done security/rebuilt.json '[.[] | select((.image + "|" + .id) as $k | ($done[0] | index($k)) | not)]' fixable.json > new.json
+          # The key leaves out the realtime image's version: every rebuild raises it, and with it in the key
+          # a finding a rebuild cannot fix looked new after each rebuild and rebuilt again (BL-338).
+          jq -c --slurpfile done security/rebuilt.json '[.[] | select(((.image | sub("^brewless-realtime:.*$"; "brewless-realtime")) + "|" + .id) as $k | ($done[0] | index($k)) | not)]' fixable.json > new.json
           echo "new=$(jq length new.json)" >> "$GITHUB_OUTPUT"
           echo "realtime=$(jq '[.[] | select(.image | startswith("brewless-realtime:"))] | length' new.json)" >> "$GITHUB_OUTPUT"
           echo "composer=$(jq -r '[.[] | select(.image | startswith("brewless-realtime:")) | select(.type == "composer") | .package] | unique | join(" ")' new.json)" >> "$GITHUB_OUTPUT"
@@ -102,7 +104,7 @@ jobs:
           PHP: ${{ steps.php.outputs.newer }}
           ADDED: ${{ steps.minor.outputs.added }}
         run: |
-          jq -c '[.[] | .image + "|" + .id]' fixable.json > security/rebuilt.json
+          jq -c '[.[] | (.image | sub("^brewless-realtime:.*$"; "brewless-realtime")) + "|" + .id] | unique' fixable.json > security/rebuilt.json
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add php-versions Dockerfile realtime security
